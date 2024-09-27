@@ -1,4 +1,4 @@
-// promptClipperProvider.ts
+// src/promptClipperProvider.ts
 
 import * as vscode from 'vscode';
 
@@ -8,7 +8,6 @@ import * as vscode from 'vscode';
 export class CheckableTreeItem extends vscode.TreeItem {
     public checked: boolean;
     public range: vscode.Range;
-    public uniqueId: string;
 
     constructor(
         label: string,
@@ -20,8 +19,8 @@ export class CheckableTreeItem extends vscode.TreeItem {
         this.checked = checked;
         this.range = range;
 
-        // Assign a uniqueId based on label and start position
-        this.uniqueId = `${label}:${range.start.line}:${range.start.character}`;
+        // Assign a unique id based on label and start position
+        this.id = `${label}:${range.start.line}:${range.start.character}`;
 
         // Initialize the checkbox state
         this.updateCheckboxState();
@@ -30,7 +29,7 @@ export class CheckableTreeItem extends vscode.TreeItem {
         this.command = {
             command: 'promptclipper.toggleSelection',
             title: 'Toggle Selection',
-            arguments: [this]
+            arguments: [this.id] // Pass only the unique id
         };
 
         // Optional: Set contextValue if you plan to add context-specific actions
@@ -45,7 +44,6 @@ export class CheckableTreeItem extends vscode.TreeItem {
             ? vscode.TreeItemCheckboxState.Checked
             : vscode.TreeItemCheckboxState.Unchecked;
         console.log(`Item "${this.label}" checkbox state updated to ${this.checked ? 'checked' : 'unchecked'}`);
-        console.log("**UPDATE**");
     }
 }
 
@@ -88,37 +86,49 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
     }
 
     /**
-     * Fetches items (classes, functions, methods) from the active editor.
+     * Fetches items (classes, functions, methods) from the active editor using symbols.
      */
-    private fetchItems(): void {
+    private async fetchItems(): Promise<void> {
         console.log('fetchItems method called');
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const document = editor.document;
-            const text = document.getText();
-            const regex = /(?:class|def)\s+(\w+)(?:\(.*?\))?:/g;
+            const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+                'vscode.executeDocumentSymbolProvider',
+                document.uri
+            );
+
             const newItems: CheckableTreeItem[] = [];
-            let match: RegExpExecArray | null;
 
-            while ((match = regex.exec(text)) !== null) {
-                const startPos = document.positionAt(match.index);
-                const endPos = document.positionAt(match.index + match[0].length);
-                const range = new vscode.Range(startPos, endPos);
-                const uniqueId = `${match[1]}:${startPos.line}:${startPos.character}`; // include label for uniqueness
+            if (symbols) {
+                symbols.forEach(symbol => {
+                    // Filter for classes, functions, methods based on symbol kind
+                    if (
+                        symbol.kind === vscode.SymbolKind.Class ||
+                        symbol.kind === vscode.SymbolKind.Function ||
+                        symbol.kind === vscode.SymbolKind.Method
+                    ) {
+                        const label = symbol.name;
+                        const range = symbol.location.range;
 
-                // Find existing item by uniqueId to preserve the checked state
-                const existingItem = this.items.find(item => item.uniqueId === uniqueId);
-                const isChecked = existingItem ? existingItem.checked : false;
+                        // Assign a unique id based on label and start position
+                        const uniqueId = `${label}:${range.start.line}:${range.start.character}`;
 
-                const newItem = new CheckableTreeItem(
-                    match[1],
-                    vscode.TreeItemCollapsibleState.None,
-                    range,
-                    isChecked
-                );
+                        // Find existing item by uniqueId to preserve the checked state
+                        const existingItem = this.items.find(item => item.id === uniqueId);
+                        const isChecked = existingItem ? existingItem.checked : false;
 
-                newItems.push(newItem);
-                console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, uniqueId: ${newItem.uniqueId}`);
+                        const newItem = new CheckableTreeItem(
+                            label,
+                            vscode.TreeItemCollapsibleState.None,
+                            range,
+                            isChecked
+                        );
+
+                        newItems.push(newItem);
+                        console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, id: ${newItem.id}`);
+                    }
+                });
             }
 
             this.items = newItems;
@@ -151,20 +161,20 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
     }
 
     /**
-     * Toggles the selection (checked state) of a given item.
-     * @param item The item to toggle.
+     * Toggles the selection (checked state) of a given item based on its unique id.
+     * @param id The unique id of the item to toggle.
      */
-    public toggleSelection(item: CheckableTreeItem): void {
-        console.log(`Toggle selection command invoked for item: "${item.label}", uniqueId: ${item.uniqueId}`);
+    public toggleSelection(id: string): void {
+        console.log(`Toggle selection command invoked for id: "${id}"`);
 
-        const treeItem = this.items.find(i => i.uniqueId === item.uniqueId);
+        const treeItem = this.items.find(i => i.id === id);
         if (treeItem) {
             treeItem.checked = !treeItem.checked;
             treeItem.updateCheckboxState();
             this._onDidChangeTreeData.fire(treeItem);
             console.log(`Item "${treeItem.label}" is now ${treeItem.checked ? 'checked' : 'unchecked'}`);
         } else {
-            console.log(`Item "${item.label}" with uniqueId "${item.uniqueId}" not found in items list`);
+            console.log(`Item with id "${id}" not found in items list`);
         }
     }
 
