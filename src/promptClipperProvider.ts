@@ -93,46 +93,53 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const document = editor.document;
-            const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
-                'vscode.executeDocumentSymbolProvider',
-                document.uri
-            );
+            try {
+                const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+                    'vscode.executeDocumentSymbolProvider',
+                    document.uri
+                );
 
-            const newItems: CheckableTreeItem[] = [];
+                const newItems: CheckableTreeItem[] = [];
 
-            if (symbols) {
-                symbols.forEach(symbol => {
-                    // Filter for classes, functions, methods based on symbol kind
-                    if (
-                        symbol.kind === vscode.SymbolKind.Class ||
-                        symbol.kind === vscode.SymbolKind.Function ||
-                        symbol.kind === vscode.SymbolKind.Method
-                    ) {
-                        const label = symbol.name;
-                        const range = symbol.location.range;
+                if (symbols) {
+                    symbols.forEach(symbol => {
+                        // Filter for classes, functions, methods based on symbol kind
+                        if (
+                            symbol.kind === vscode.SymbolKind.Class ||
+                            symbol.kind === vscode.SymbolKind.Function ||
+                            symbol.kind === vscode.SymbolKind.Method
+                        ) {
+                            const label = symbol.name;
+                            const range = symbol.location.range;
 
-                        // Assign a unique id based on label and start position
-                        const uniqueId = `${label}:${range.start.line}:${range.start.character}`;
+                            // Assign a unique id based on label and start position
+                            const uniqueId = `${label}:${range.start.line}:${range.start.character}`;
 
-                        // Find existing item by uniqueId to preserve the checked state
-                        const existingItem = this.items.find(item => item.id === uniqueId);
-                        const isChecked = existingItem ? existingItem.checked : false;
+                            // Find existing item by uniqueId to preserve the checked state
+                            const existingItem = this.items.find(item => item.id === uniqueId);
+                            const isChecked = existingItem ? existingItem.checked : false;
 
-                        const newItem = new CheckableTreeItem(
-                            label,
-                            vscode.TreeItemCollapsibleState.None,
-                            range,
-                            isChecked
-                        );
+                            const newItem = new CheckableTreeItem(
+                                label,
+                                vscode.TreeItemCollapsibleState.None,
+                                range,
+                                isChecked
+                            );
 
-                        newItems.push(newItem);
-                        console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, id: ${newItem.id}`);
-                    }
-                });
+                            newItems.push(newItem);
+                            console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, id: ${newItem.id}`);
+                        }
+                    });
+                } else {
+                    console.log('No symbols found in the document');
+                }
+
+                this.items = newItems;
+                console.log(`Total items after refresh: ${this.items.length}`);
+            } catch (error) {
+                console.error('Error fetching symbols:', error);
+                this.items = [];
             }
-
-            this.items = newItems;
-            console.log(`Total items after refresh: ${this.items.length}`);
         } else {
             this.items = [];
             console.log('No active editor, items cleared');
