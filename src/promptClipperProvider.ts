@@ -1,11 +1,14 @@
+// promptClipperProvider.ts
+
 import * as vscode from 'vscode';
 
 /**
- * A TreeItem that includes a checkbox.
+ * A TreeItem that includes a checkbox and a unique identifier.
  */
-export class CheckableTreeItem extends vscode.TreeItem { // Added 'export' here
+export class CheckableTreeItem extends vscode.TreeItem {
     public checked: boolean;
     public range: vscode.Range;
+    public uniqueId: string;
 
     constructor(
         label: string,
@@ -17,8 +20,8 @@ export class CheckableTreeItem extends vscode.TreeItem { // Added 'export' here
         this.checked = checked;
         this.range = range;
 
-        // Assign a unique ID based on the start position of the range
-        this.id = `${range.start.line}:${range.start.character}`;
+        // Assign a uniqueId based on label and start position
+        this.uniqueId = `${label}:${range.start.line}:${range.start.character}`;
 
         // Initialize the checkbox state
         this.updateCheckboxState();
@@ -30,7 +33,7 @@ export class CheckableTreeItem extends vscode.TreeItem { // Added 'export' here
             arguments: [this]
         };
 
-        // Enable the checkbox
+        // Optional: Set contextValue if you plan to add context-specific actions
         this.contextValue = 'checkable';
     }
 
@@ -100,10 +103,10 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
                 const startPos = document.positionAt(match.index);
                 const endPos = document.positionAt(match.index + match[0].length);
                 const range = new vscode.Range(startPos, endPos);
-                const uniqueId = `${startPos.line}:${startPos.character}`;
+                const uniqueId = `${match[1]}:${startPos.line}:${startPos.character}`; // include label for uniqueness
 
-                // Preserve the checked state if the item already exists
-                const existingItem = this.items.find(item => item.id === uniqueId);
+                // Find existing item by uniqueId to preserve the checked state
+                const existingItem = this.items.find(item => item.uniqueId === uniqueId);
                 const isChecked = existingItem ? existingItem.checked : false;
 
                 const newItem = new CheckableTreeItem(
@@ -114,7 +117,7 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
                 );
 
                 newItems.push(newItem);
-                console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}`);
+                console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, uniqueId: ${newItem.uniqueId}`);
             }
 
             this.items = newItems;
@@ -151,16 +154,16 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
      * @param item The item to toggle.
      */
     public toggleSelection(item: CheckableTreeItem): void {
-        console.log(`Toggle selection command invoked for item: "${item.label}"`);
+        console.log(`Toggle selection command invoked for item: "${item.label}", uniqueId: ${item.uniqueId}`);
 
-        const treeItem = this.items.find(i => i.id === item.id);
+        const treeItem = this.items.find(i => i.uniqueId === item.uniqueId);
         if (treeItem) {
             treeItem.checked = !treeItem.checked;
             treeItem.updateCheckboxState();
             this._onDidChangeTreeData.fire(treeItem);
             console.log(`Item "${treeItem.label}" is now ${treeItem.checked ? 'checked' : 'unchecked'}`);
         } else {
-            console.log(`Item "${item.label}" not found in items list`);
+            console.log(`Item "${item.label}" with uniqueId "${item.uniqueId}" not found in items list`);
         }
     }
 
