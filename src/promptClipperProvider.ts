@@ -45,6 +45,7 @@ export class CheckableTreeItem extends vscode.TreeItem {
             ? vscode.TreeItemCheckboxState.Checked
             : vscode.TreeItemCheckboxState.Unchecked;
         console.log(`Item "${this.label}" checkbox state updated to ${this.checked ? 'checked' : 'unchecked'}`);
+        console.log("**UPDATE**");
     }
 }
 
