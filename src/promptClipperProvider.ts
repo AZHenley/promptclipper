@@ -1,18 +1,27 @@
 import * as vscode from 'vscode';
 
-class CheckableTreeItem extends vscode.TreeItem {
+/**
+ * A TreeItem that includes a checkbox.
+ */
+export class CheckableTreeItem extends vscode.TreeItem { // Added 'export' here
+    public checked: boolean;
+    public range: vscode.Range;
+
     constructor(
-        public readonly label: string,
-        public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public checked: boolean = false,
-        public readonly range: vscode.Range
+        label: string,
+        collapsibleState: vscode.TreeItemCollapsibleState,
+        range: vscode.Range,
+        checked: boolean = false
     ) {
         super(label, collapsibleState);
-        
+        this.checked = checked;
+        this.range = range;
+
         // Assign a unique ID based on the start position of the range
         this.id = `${range.start.line}:${range.start.character}`;
-        
-        this.updateCheckbox();
+
+        // Initialize the checkbox state
+        this.updateCheckboxState();
 
         // Associate the toggleSelection command with this TreeItem
         this.command = {
@@ -20,9 +29,15 @@ class CheckableTreeItem extends vscode.TreeItem {
             title: 'Toggle Selection',
             arguments: [this]
         };
+
+        // Enable the checkbox
+        this.contextValue = 'checkable';
     }
 
-    updateCheckbox() {
+    /**
+     * Updates the checkbox state based on the 'checked' property.
+     */
+    public updateCheckboxState(): void {
         this.checkboxState = this.checked
             ? vscode.TreeItemCheckboxState.Checked
             : vscode.TreeItemCheckboxState.Unchecked;
@@ -30,6 +45,9 @@ class CheckableTreeItem extends vscode.TreeItem {
     }
 }
 
+/**
+ * TreeDataProvider for the PromptClipper extension.
+ */
 export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<CheckableTreeItem | undefined | null | void> = new vscode.EventEmitter<CheckableTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<CheckableTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
@@ -39,6 +57,8 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
 
     constructor() {
         console.log('PromptClipperProvider constructor called');
+
+        // Listen to editor and document changes to refresh the tree view
         this.disposables.push(
             vscode.window.onDidChangeActiveTextEditor(() => {
                 console.log('Active text editor changed');
@@ -47,40 +67,27 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
             vscode.workspace.onDidChangeTextDocument(() => {
                 console.log('Text document changed');
                 this.refresh();
-            }),
-            vscode.commands.registerCommand('promptclipper.toggleSelection', (item: CheckableTreeItem) => {
-                console.log(`Toggle selection command called for item: "${item.label}"`);
-                this.toggleSelection(item);
-            }),
-            vscode.commands.registerCommand('promptclipper.copySelected', () => {
-                console.log('Copy selected command called');
-                this.copySelectedToClipboard();
             })
         );
+
+        // Initial population of items
         this.refresh();
     }
 
-    refresh(): void {
+    /**
+     * Refreshes the tree view by fetching new items.
+     */
+    public refresh(): void {
         console.log('Refresh method called');
-        this.getItems();
+        this.fetchItems();
         this._onDidChangeTreeData.fire();
     }
 
-    getTreeItem(element: CheckableTreeItem): vscode.TreeItem {
-        return element;
-    }
-
-    getChildren(element?: CheckableTreeItem): Thenable<CheckableTreeItem[]> {
-        console.log(`getChildren called, returning ${this.items.length} items`);
-        if (element) {
-            return Promise.resolve([]);
-        } else {
-            return Promise.resolve(this.items);
-        }
-    }
-
-    private getItems(): void {
-        console.log('getItems method called');
+    /**
+     * Fetches items (classes, functions, methods) from the active editor.
+     */
+    private fetchItems(): void {
+        console.log('fetchItems method called');
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const document = editor.document;
@@ -88,26 +95,28 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
             const regex = /(?:class|def)\s+(\w+)(?:\(.*?\))?:/g;
             const newItems: CheckableTreeItem[] = [];
             let match: RegExpExecArray | null;
+
             while ((match = regex.exec(text)) !== null) {
                 const startPos = document.positionAt(match.index);
+                const endPos = document.positionAt(match.index + match[0].length);
+                const range = new vscode.Range(startPos, endPos);
                 const uniqueId = `${startPos.line}:${startPos.character}`;
-                const range = new vscode.Range(
-                    startPos,
-                    document.positionAt(match.index + match[0].length)
-                );
-                
-                // Find existing item by unique ID to preserve the checked state
+
+                // Preserve the checked state if the item already exists
                 const existingItem = this.items.find(item => item.id === uniqueId);
-                
+                const isChecked = existingItem ? existingItem.checked : false;
+
                 const newItem = new CheckableTreeItem(
-                    match[1], 
-                    vscode.TreeItemCollapsibleState.None, 
-                    existingItem ? existingItem.checked : false, 
-                    range
+                    match[1],
+                    vscode.TreeItemCollapsibleState.None,
+                    range,
+                    isChecked
                 );
+
                 newItems.push(newItem);
                 console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}`);
             }
+
             this.items = newItems;
             console.log(`Total items after refresh: ${this.items.length}`);
         } else {
@@ -116,12 +125,38 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
         }
     }
 
-    private toggleSelection(item: CheckableTreeItem): void {
-        console.log(`Toggling selection for item: "${item.label}"`);
+    /**
+     * Returns the TreeItem representation of an element.
+     * @param element The element for which to get the TreeItem.
+     */
+    public getTreeItem(element: CheckableTreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    /**
+     * Returns the children of a given element.
+     * @param element The parent element.
+     */
+    public getChildren(element?: CheckableTreeItem): Thenable<CheckableTreeItem[]> {
+        console.log(`getChildren called, returning ${this.items.length} items`);
+        if (element) {
+            return Promise.resolve([]); // No children since all items are leaf nodes
+        } else {
+            return Promise.resolve(this.items);
+        }
+    }
+
+    /**
+     * Toggles the selection (checked state) of a given item.
+     * @param item The item to toggle.
+     */
+    public toggleSelection(item: CheckableTreeItem): void {
+        console.log(`Toggle selection command invoked for item: "${item.label}"`);
+
         const treeItem = this.items.find(i => i.id === item.id);
         if (treeItem) {
             treeItem.checked = !treeItem.checked;
-            treeItem.updateCheckbox();
+            treeItem.updateCheckboxState();
             this._onDidChangeTreeData.fire(treeItem);
             console.log(`Item "${treeItem.label}" is now ${treeItem.checked ? 'checked' : 'unchecked'}`);
         } else {
@@ -129,22 +164,26 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
         }
     }
 
-    copySelectedToClipboard(): void {
+    /**
+     * Copies the selected (checked) items' code to the clipboard.
+     */
+    public copySelectedToClipboard(): void {
         console.log('copySelectedToClipboard method called');
         const editor = vscode.window.activeTextEditor;
         if (editor) {
             const document = editor.document;
             const selectedItems = this.items.filter(item => item.checked);
             console.log(`Found ${selectedItems.length} checked items`);
-            
+
             const selectedText = selectedItems
                 .map(item => {
                     const text = document.getText(item.range);
-                    console.log(`Copying text for "${item.label}": ${text.substring(0, Math.min(text.length, 20))}...`);
+                    const preview = text.length > 20 ? `${text.substring(0, 20)}...` : text;
+                    console.log(`Copying text for "${item.label}": ${preview}`);
                     return text;
                 })
                 .join('\n\n');
-            
+
             if (selectedText) {
                 vscode.env.clipboard.writeText(selectedText);
                 vscode.window.showInformationMessage('Selected items copied to clipboard');
@@ -158,7 +197,10 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
         }
     }
 
-    dispose() {
+    /**
+     * Disposes of any resources held by the provider.
+     */
+    public dispose(): void {
         this.disposables.forEach(d => d.dispose());
     }
 }

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PromptClipperProvider } from './promptClipperProvider';
+import { PromptClipperProvider, CheckableTreeItem } from './promptClipperProvider'; // Imported CheckableTreeItem
 
 export function activate(context: vscode.ExtensionContext) {
     const promptClipperProvider = new PromptClipperProvider();
@@ -13,7 +13,11 @@ export function activate(context: vscode.ExtensionContext) {
         promptClipperProvider.copySelectedToClipboard();
     });
 
-    context.subscriptions.push(refreshCommand, copySelectedCommand);
+    let toggleSelectionCommand = vscode.commands.registerCommand('promptclipper.toggleSelection', (item: CheckableTreeItem) => { // Added type
+        promptClipperProvider.toggleSelection(item);
+    });
+
+    context.subscriptions.push(refreshCommand, copySelectedCommand, toggleSelectionCommand);
 }
 
 export function deactivate() {}
