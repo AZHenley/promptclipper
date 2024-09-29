@@ -3,27 +3,40 @@
 import * as vscode from 'vscode';
 
 /**
- * A TreeItem that includes a checkbox and a unique identifier.
+ * A TreeItem that includes a checkbox, a unique identifier, symbol kind, and parameters.
  */
 export class CheckableTreeItem extends vscode.TreeItem {
     public checked: boolean;
     public range: vscode.Range;
+    public symbolKind: vscode.SymbolKind;
+    public parameters: string;
+    public detail?: string; // Add this line
 
     constructor(
         label: string,
         collapsibleState: vscode.TreeItemCollapsibleState,
         range: vscode.Range,
+        symbolKind: vscode.SymbolKind,
+        parameters: string = '',
         checked: boolean = false
     ) {
         super(label, collapsibleState);
         this.checked = checked;
         this.range = range;
+        this.symbolKind = symbolKind;
+        this.parameters = parameters;
 
         // Assign a unique id based on label and start position
         this.id = `${label}:${range.start.line}:${range.start.character}`;
 
         // Initialize the checkbox state
         this.updateCheckboxState();
+
+        // Set the icon based on symbol kind
+        this.iconPath = this.getIconForSymbolKind(symbolKind);
+
+        // Set the detail to show parameters
+        this.detail = parameters;
 
         // Associate the toggleSelection command with this TreeItem
         this.command = {
@@ -34,6 +47,22 @@ export class CheckableTreeItem extends vscode.TreeItem {
 
         // Optional: Set contextValue if you plan to add context-specific actions
         this.contextValue = 'checkable';
+    }
+
+    /**
+     * Determines the icon based on the symbol kind.
+     */
+    private getIconForSymbolKind(kind: vscode.SymbolKind): vscode.ThemeIcon {
+        switch (kind) {
+            case vscode.SymbolKind.Class:
+                return new vscode.ThemeIcon('symbol-class');
+            case vscode.SymbolKind.Method:
+                return new vscode.ThemeIcon('symbol-method');
+            case vscode.SymbolKind.Function:
+                return new vscode.ThemeIcon('symbol-function');
+            default:
+                return new vscode.ThemeIcon('symbol-unknown');
+        }
     }
 
     /**
@@ -94,7 +123,7 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
         if (editor) {
             const document = editor.document;
             try {
-                const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+                const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
                     'vscode.executeDocumentSymbolProvider',
                     document.uri
                 );
@@ -102,34 +131,10 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
                 const newItems: CheckableTreeItem[] = [];
 
                 if (symbols) {
-                    symbols.forEach(symbol => {
-                        // Filter for classes, functions, methods based on symbol kind
-                        if (
-                            symbol.kind === vscode.SymbolKind.Class ||
-                            symbol.kind === vscode.SymbolKind.Function ||
-                            symbol.kind === vscode.SymbolKind.Method
-                        ) {
-                            const label = symbol.name;
-                            const range = symbol.location.range;
-
-                            // Assign a unique id based on label and start position
-                            const uniqueId = `${label}:${range.start.line}:${range.start.character}`;
-
-                            // Find existing item by uniqueId to preserve the checked state
-                            const existingItem = this.items.find(item => item.id === uniqueId);
-                            const isChecked = existingItem ? existingItem.checked : false;
-
-                            const newItem = new CheckableTreeItem(
-                                label,
-                                vscode.TreeItemCollapsibleState.None,
-                                range,
-                                isChecked
-                            );
-
-                            newItems.push(newItem);
-                            console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, id: ${newItem.id}`);
-                        }
-                    });
+                    for (const symbol of symbols) {
+                        // Recursively process symbols
+                        this.processSymbol(symbol, document, newItems);
+                    }
                 } else {
                     console.log('No symbols found in the document');
                 }
@@ -144,6 +149,74 @@ export class PromptClipperProvider implements vscode.TreeDataProvider<CheckableT
             this.items = [];
             console.log('No active editor, items cleared');
         }
+    }
+
+    /**
+     * Processes a symbol and adds it to the items array if it matches desired kinds.
+     * Also recursively processes children symbols.
+     */
+    private processSymbol(symbol: vscode.DocumentSymbol, document: vscode.TextDocument, items: CheckableTreeItem[]) {
+        // Filter for classes, functions, methods based on symbol kind
+        if (
+            symbol.kind === vscode.SymbolKind.Class ||
+            symbol.kind === vscode.SymbolKind.Function ||
+            symbol.kind === vscode.SymbolKind.Method
+        ) {
+            const label = symbol.name;
+            const range = symbol.range;
+
+            // Extract parameters if it's a function or method
+            let parameters = '';
+            if (symbol.kind === vscode.SymbolKind.Function || symbol.kind === vscode.SymbolKind.Method) {
+                parameters = this.extractParameters(document, symbol);
+            }
+
+            // Assign a unique id based on label and start position
+            const uniqueId = `${label}:${range.start.line}:${range.start.character}`;
+
+            // Find existing item by uniqueId to preserve the checked state
+            const existingItem = this.items.find(item => item.id === uniqueId);
+            const isChecked = existingItem ? existingItem.checked : false;
+
+            const newItem = new CheckableTreeItem(
+                label,
+                vscode.TreeItemCollapsibleState.None,
+                range,
+                symbol.kind,
+                parameters,
+                isChecked
+            );
+
+            items.push(newItem);
+            console.log(`Added item: "${newItem.label}", checked: ${newItem.checked}, id: ${newItem.id}, parameters: "${newItem.parameters}"`);
+        }
+
+        // Recursively process children
+        if (symbol.children) {
+            for (const child of symbol.children) {
+                this.processSymbol(child, document, items);
+            }
+        }
+    }
+
+    /**
+     * Extracts parameters from a function or method symbol.
+     * This is a simplistic implementation using regex.
+     * It might need to be adjusted based on language syntax.
+     */
+    private extractParameters(document: vscode.TextDocument, symbol: vscode.DocumentSymbol): string {
+        try {
+            const symbolText = document.getText(symbol.range);
+            // Simple regex to extract parameters within parentheses
+            const regex = /\(([^)]*)\)/;
+            const match = regex.exec(symbolText);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+        } catch (error) {
+            console.error(`Error extracting parameters for symbol "${symbol.name}":`, error);
+        }
+        return '';
     }
 
     /**
